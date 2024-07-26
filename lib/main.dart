@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:loginapp/loginscreen.dart';
+import 'package:loginapp/splashScreen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -14,7 +15,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Cipra AI',
-      home: Loginscreen(),
+      home: SplashScreen(),
     );
   }
 }

@@ -14,7 +14,8 @@ class _LoginscreenState extends State<Loginscreen> {
   bool _obscureText = true;
   bool _isEmailFocused = false;
   bool _isPasswordFocused = false;
-
+  bool _isLoading = false;
+  
   final FocusNode _emailFocusNode = FocusNode();
   final FocusNode _passwordFocusNode = FocusNode();
   final TextEditingController _emailController = TextEditingController();
@@ -180,51 +181,70 @@ class _LoginscreenState extends State<Loginscreen> {
                 ),
                 SizedBox(height: 40),
                 Container(
-                  height: 50,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Color(0xff3A4F98),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    onPressed: () async {
-                      final email = _emailController.text;
-                      final password = _passwordController.text;
-            
-                      if (email.isEmpty || password.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Please enter both email and password')),
-                        );
-                        return;
-                      }
-            
-                      final success = await _signIn(email, password);
-            
-                      if (success) {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => HomeScreen(),
-                          ),
-                        );
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Invalid credentials')),
-                        );
-                      }
-                    },
-                    child: Text(
-                      'Sign In',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontFamily: 'Urbanistbold',
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
+  height: 50,
+  child: ElevatedButton(
+    style: ElevatedButton.styleFrom(
+      backgroundColor: Color(0xff3A4F98),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+    ),
+    onPressed: _isLoading ? null : () async {
+      setState(() {
+        _isLoading = true;
+      });
+
+      final email = _emailController.text;
+      final password = _passwordController.text;
+
+      if (email.isEmpty || password.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Please enter both email and password')),
+        );
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final success = await _signIn(email, password);
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      if (success) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => HomeScreen(),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Invalid credentials')),
+        );
+      }
+    },
+    child: _isLoading
+      ? SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+          ),
+        )
+      : Text(
+          'Sign In',
+          style: TextStyle(
+            fontSize: 15,
+            fontFamily: 'Urbanistbold',
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+  ),
+),
               ],
             ),
           ],
