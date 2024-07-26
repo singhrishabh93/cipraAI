@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:loginapp/homescreen.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:http/io_client.dart';
+import 'dart:async';
 
 class Loginscreen extends StatefulWidget {
-  const Loginscreen({super.key});
+  const Loginscreen({Key? key}) : super(key: key);
 
   @override
   State<Loginscreen> createState() => _LoginscreenState();
@@ -47,16 +51,34 @@ class _LoginscreenState extends State<Loginscreen> {
   }
 
   Future<void> _checkLoginStatus() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    bool isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
-    if (isLoggedIn) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => HomeScreen(),
-        ),
-      );
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      bool isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+      if (isLoggedIn) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => HomeScreen(),
+          ),
+        );
+      }
+    } catch (e) {
+      _showErrorSnackBar('Error checking login status: $e');
     }
+  }
+
+  Future<bool> _checkInternetConnectivity() async {
+    try {
+      final result = await InternetAddress.lookup('google.com');
+      if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
+        print('Internet connectivity check passed');
+        return true;
+      }
+    } on SocketException catch (_) {
+      print('Internet connectivity check failed');
+      return false;
+    }
+    return false;
   }
 
   Future<bool> _signIn(String email, String password) async {
@@ -67,17 +89,60 @@ class _LoginscreenState extends State<Loginscreen> {
     });
 
     try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('isLoggedIn', true);
+      print('Attempting to connect to: $url');
+
+      final ioc = HttpClient();
+      ioc.badCertificateCallback = (X509Certificate cert, String host, int port) {
+        print('Bad certificate callback: host=$host, port=$port');
         return true;
+      };
+      final http = IOClient(ioc);
+
+      print('Sending request...');
+      final response = await http.get(url).timeout(Duration(seconds: 30));
+      print('Response received. Status code: ${response.statusCode}');
+      print('Response headers: ${response.headers}');
+      print('Response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        // Check if the response body is "Valid Credentials"
+        if (response.body.trim() == "Valid Credentials") {
+          SharedPreferences prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('isLoggedIn', true);
+          return true;
+        } else {
+          _showErrorSnackBar('Invalid credentials');
+          return false;
+        }
+      } else {
+        _showErrorSnackBar('Server error: ${response.statusCode}');
+        return false;
+      }
+    } catch (e) {
+      print('Detailed error: $e');
+      if (e is SocketException) {
+        print('SocketException details: ${e.message}, ${e.address}, ${e.port}');
+        _showErrorSnackBar('Network error: Unable to connect to the server. Please check your internet connection.');
+      } else if (e is HandshakeException) {
+        print('HandshakeException details: ${e.message}');
+        _showErrorSnackBar('SSL/TLS Handshake failed. There might be an issue with the server\'s certificate.');
+      } else if (e is TimeoutException) {
+        print('TimeoutException: The connection timed out');
+        _showErrorSnackBar('The connection timed out. Please try again.');
+      } else {
+        _showErrorSnackBar('An unexpected error occurred: $e');
       }
       return false;
-    } catch (e) {
-      print('Exception: $e');
-      return false;
     }
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   @override
@@ -93,7 +158,7 @@ class _LoginscreenState extends State<Loginscreen> {
                 Padding(
                   padding: EdgeInsets.only(top: 60),
                   child: Container(
-                    width: MediaQuery.sizeOf(context).width,
+                    width: MediaQuery.of(context).size.width,
                     height: 120,
                     child: Image.asset("assets/logo.png"),
                   ),
@@ -105,7 +170,7 @@ class _LoginscreenState extends State<Loginscreen> {
                 ),
                 SizedBox(height: 60),
                 Container(
-                  width: MediaQuery.sizeOf(context).width * 0.8,
+                  width: MediaQuery.of(context).size.width * 0.8,
                   child: TextFormField(
                     controller: _emailController,
                     focusNode: _emailFocusNode,
@@ -139,7 +204,7 @@ class _LoginscreenState extends State<Loginscreen> {
                 ),
                 SizedBox(height: 20),
                 Container(
-                  width: MediaQuery.sizeOf(context).width * 0.8,
+                  width: MediaQuery.of(context).size.width * 0.8,
                   child: TextFormField(
                     controller: _passwordController,
                     focusNode: _passwordFocusNode,
@@ -181,70 +246,76 @@ class _LoginscreenState extends State<Loginscreen> {
                 ),
                 SizedBox(height: 40),
                 Container(
-  height: 50,
-  child: ElevatedButton(
-    style: ElevatedButton.styleFrom(
-      backgroundColor: Color(0xff3A4F98),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-      ),
-    ),
-    onPressed: _isLoading ? null : () async {
-      setState(() {
-        _isLoading = true;
-      });
+                  height: 50,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xff3A4F98),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: _isLoading ? null : () async {
+                      setState(() {
+                        _isLoading = true;
+                      });
 
-      final email = _emailController.text;
-      final password = _passwordController.text;
+                      final email = _emailController.text;
+                      final password = _passwordController.text;
 
-      if (email.isEmpty || password.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Please enter both email and password')),
-        );
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
+                      if (email.isEmpty || password.isEmpty) {
+                        _showErrorSnackBar('Please enter both email and password');
+                        setState(() {
+                          _isLoading = false;
+                        });
+                        return;
+                      }
 
-      final success = await _signIn(email, password);
+                      bool hasInternet = await _checkInternetConnectivity();
+                      if (!hasInternet) {
+                        _showErrorSnackBar('No internet connection. Please check your network settings.');
+                        setState(() {
+                          _isLoading = false;
+                        });
+                        return;
+                      }
 
-      setState(() {
-        _isLoading = false;
-      });
+                      final success = await _signIn(email, password);
 
-      if (success) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => HomeScreen(),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Invalid credentials')),
-        );
-      }
-    },
-    child: _isLoading
-      ? SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-          ),
-        )
-      : Text(
-          'Sign In',
-          style: TextStyle(
-            fontSize: 15,
-            fontFamily: 'Urbanistbold',
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-  ),
-),
+                      setState(() {
+                        _isLoading = false;
+                      });
+
+                      if (success) {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => HomeScreen(),
+                          ),
+                        );
+                      } else {
+                        // Optionally, you can show a message here for failed login
+                        _showErrorSnackBar('Login failed. Please try again.');
+                      }
+                    },
+                    child: _isLoading
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : Text(
+                          'Sign In',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontFamily: 'Urbanistbold',
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                  ),
+                ),
               ],
             ),
           ],
